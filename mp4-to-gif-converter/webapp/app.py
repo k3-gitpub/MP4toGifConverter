@@ -7,7 +7,7 @@ from celery.result import AsyncResult
 
 # 独自ライブラリのインポート
 from core_converter import conversion
-from webapp.tasks import celery_app, convert_video_to_gif_task
+from webapp.tasks import celery_app, convert_video_to_gif_task, cleanup_files_task
 app = Flask(__name__)
 
 # --- 設定 ---
@@ -67,12 +67,10 @@ def start_conversion_task():
     # 2. パラメータの取得とデフォルト値の設定
     try:
         start_time = request.form.get('start_time', 0, type=float)
-        # end_timeは空の場合があるので、Noneとして扱う
-        end_time_str = request.form.get('end_time')
-        end_time = float(end_time_str) if end_time_str else None
+        end_time = request.form.get('end_time', default=None, type=float)
         fps = request.form.get('fps', 10, type=int)
         width = request.form.get('width', 320, type=int)
-        # チェックボックスがONの場合"true"が、OFFの場合Noneが送られてくる
+        # チェックボックスがONの場合"true"が、OFFの場合やキーが存在しない場合はFalseになる
         high_quality = request.form.get('high_quality') == 'true'
     except (ValueError, TypeError):
         return jsonify({"error": "パラメータの型が不正です"}), 400
@@ -92,6 +90,9 @@ def start_conversion_task():
     task = convert_video_to_gif_task.delay(
         input_path, output_path, start_time, end_time, fps, width, high_quality
     )
+
+    # 6. クリーンアップタスクを1時間後に実行するようにスケジュール
+    cleanup_files_task.apply_async(args=[input_path, output_path], countdown=3600) # 3600秒 = 1時間
 
     # 6. タスクIDとステータス確認用URLをクライアントに即座に返す
     return jsonify({
@@ -125,26 +126,15 @@ def get_task_status(task_id):
 
 @app.route('/download/<filename>')
 def download_gif(filename):
-    """生成されたGIFファイルをストリームで送信し、その後削除する。"""
+    """生成されたGIFファイルを送信する (クリーンアップはバックグラウンドタスクが担当)"""
     path = os.path.join(app.config['OUTPUT_FOLDER'], filename)
 
     if not os.path.exists(path):
         return jsonify({"error": "ファイルが見つからないか、既に削除されています。"}), 404
 
-    def generate():
-        try:
-            with open(path, 'rb') as f:
-                yield from f
-        finally:
-            # このジェネレータが終了した (ストリームが完了した) 後にファイルを削除
-            try:
-                print(f"ストリーム完了。出力ファイルを削除: {path}")
-                os.remove(path)
-            except Exception as e:
-                app.logger.error(f"一時ファイルの削除に失敗: {e}")
-
-    # stream_with_contextを使って、リクエストコンテキスト内でストリームを処理
-    return Response(stream_with_context(generate()), mimetype='image/gif')
+    # ファイルの削除はバックグラウンドのクリーンアップタスクに任せるため、
+    # ここでは単純にファイルを送信するだけにする。
+    return send_file(path, mimetype='image/gif')
 
 if __name__ == '__main__':
     # 開発用サーバーの起動 (本番環境ではGunicornなどを使用)
