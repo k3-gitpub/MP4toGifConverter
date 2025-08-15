@@ -1,0 +1,58 @@
+# render.yaml
+# This file configures the services for the mp4-to-gif-converter on Render.
+
+services:
+  # 1. Redis instance for Celery Broker and Backend
+  # Render will automatically create this and provide the connection URL
+  # to the web and worker services.
+  - type: redis
+    name: redis-broker
+    plan: free # Or a paid plan for production
+    ipAllowList: [] # Allow access from all services in the account
+
+  # 2. Web Service (Flask/Gunicorn)
+  # This service runs your Flask application.
+  - type: web
+    name: mp4-to-gif-web
+    env: python
+    # Set the Python version to match your local environment
+    # Specify the root directory for build and start commands
+    rootDir: ./mp4-to-gif-converter
+    pythonVersion: "3.11"
+    plan: free # Or a paid plan for production
+    # Command to install dependencies from your requirements file
+    buildCommand: "pip install -r webapp/requirements.txt"
+    # Command to run the Gunicorn server
+    # --chdir changes the directory to 'webapp' before running the app
+    # --timeout is increased to handle larger file uploads
+    startCommand: "gunicorn --chdir webapp app:app --workers 4 --timeout 120"
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: redis-broker
+      # FFMPEG_PATH and FFPROBE_PATH are available in Render's standard environment,
+      # so we don't need to set them explicitly.
+      - key: PYTHONPATH
+        value: . # With `rootDir`, this adds `mp4-to-gif-converter` to the path.
+
+  # 3. Worker Service (Celery)
+  # This service runs in the background to process video conversions.
+  - type: worker
+    name: mp4-to-gif-worker
+    env: python
+    # Specify the root directory for build and start commands
+    rootDir: ./mp4-to-gif-converter
+    pythonVersion: "3.11"
+    plan: free # Or a paid plan for production
+    buildCommand: "pip install -r webapp/requirements.txt"
+    # Command to start the Celery worker
+    # -A points to the Celery app instance
+    startCommand: "celery -A webapp.tasks.celery_app worker --loglevel=info"
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: redis-broker
+      - key: PYTHONPATH
+        value: . # With `rootDir`, this adds `mp4-to-gif-converter` to the path.
