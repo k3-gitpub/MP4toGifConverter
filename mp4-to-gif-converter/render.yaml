@@ -1,34 +1,54 @@
+# render.yaml
+# This file configures the services for the mp4-to-gif-converter on Render.
+
 services:
-  # 1. Webサーバー (Flask + Gunicorn)
+  # 1. Redis instance for Celery Broker and Backend
+  # Render will automatically create this and provide the connection URL
+  # to the web and worker services.
+  - type: redis
+    name: redis-broker
+    plan: free # Or a paid plan for production
+    ipAllowList: [] # Allow access from all services in the account
+
+  # 2. Web Service (Flask/Gunicorn)
+  # This service runs your Flask application.
   - type: web
-    name: mp4-to-gif-webapp
-    env: docker
-    # 無料プランの場合、一定時間アクセスがないとスリープします
-    plan: free
-    healthCheckPath: /
+    name: mp4-to-gif-web
+    env: python
+    # Set the Python version to match your local environment
+    pythonVersion: "3.10"
+    plan: free # Or a paid plan for production
+    # Command to install dependencies from your requirements file
+    buildCommand: "pip install -r webapp/requirements.txt"
+    # Command to run the Gunicorn server
+    # --chdir changes the directory to 'webapp' before running the app
+    # --timeout is increased to handle larger file uploads
+    startCommand: "gunicorn --chdir webapp app:app --workers 4 --timeout 120"
     envVars:
       - key: REDIS_URL
         fromService:
           type: redis
-          name: cache
-          property: connectionString
+          name: redis-broker
+      - key: PYTHONPATH
+        value: . # Add project root to Python path to find 'core_converter'
+      # FFMPEG_PATH and FFPROBE_PATH are available in Render's standard environment,
+      # so we don't need to set them explicitly.
 
-  # 2. バックグラウンドワーカー (Celery)
+  # 3. Worker Service (Celery)
+  # This service runs in the background to process video conversions.
   - type: worker
-    name: celery-worker
-    env: docker
-    plan: free
-    # Dockerfileと同じ環境を使い、Celeryワーカーを起動するコマンドを指定
+    name: mp4-to-gif-worker
+    env: python
+    pythonVersion: "3.10"
+    plan: free # Or a paid plan for production
+    buildCommand: "pip install -r webapp/requirements.txt"
+    # Command to start the Celery worker
+    # -A points to the Celery app instance
     startCommand: "celery -A webapp.tasks.celery_app worker --loglevel=info"
-
     envVars:
       - key: REDIS_URL
         fromService:
           type: redis
-          name: cache
-          property: connectionString
-
-# 3. Redisデータベース
-- type: redis
-  name: cache
-  plan: free
+          name: redis-broker
+      - key: PYTHONPATH
+        value: . # Add project root to Python path

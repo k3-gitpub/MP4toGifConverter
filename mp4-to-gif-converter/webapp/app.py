@@ -5,9 +5,6 @@ import sys
 from flask import Flask, request, send_file, jsonify, url_for, stream_with_context, Response, render_template
 from celery.result import AsyncResult
 
-# 兄弟ディレクトリ(core_converter)からインポートできるように、プロジェクトのルートをパスに追加
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 # 独自ライブラリのインポート
 from core_converter import conversion
 from webapp.tasks import celery_app, convert_video_to_gif_task
