@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>MP4 to GIF Converter</title>
+    <!-- noUiSlider CSS for range slider -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css" integrity="sha512-qveKnGrvOChbSzAdtSs8p69eoLegyh+1hwOMbmpCViIwj7rn4oJjdmMvWOuyQlTOZgTlZA0N2PXA7iA8/2TUYA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; max-width: 960px; margin: auto; padding: 20px; background-color: #f8f9fa; }
+        h1 { color: #343a40; }
+        .card {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        #preview-container {
+            display: none; /* Hide until a file is selected */
+        }
+        form { display: flex; flex-direction: column; gap: 15px; }
+        .form-group { display: flex; flex-direction: column; }
+        label { margin-bottom: 5px; font-weight: bold; color: #495057; }
+        input, button { padding: 10px; font-size: 16px; border-radius: 4px; border: 1px solid #ced4da; }
+        button { background-color: #007bff; color: white; border: none; cursor: pointer; transition: background-color 0.2s; }
+        button:hover { background-color: #0056b3; }
+        #status { margin-top: 20px; padding: 10px; border-radius: 5px; display: none; font-weight: 500; }
+        .info { background-color: #e2e3e5; color: #383d41; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        #result { margin-top: 20px; text-align: center; }
+        #result img { max-width: 100%; border-radius: 4px; border: 1px solid #ddd; }
+        #result a { display: inline-block; margin-top: 10px; padding: 8px 16px; background-color: #28a745; color: white; text-decoration: none; border-radius: 4px; }
+        .privacy-note { text-align: center; font-size: 13px; color: #6c757d; margin-top: 5px; margin-bottom: 20px; }
+        #slider-container {
+            margin: 30px 10px 30px 10px;
+        }
+        /* Custom styles for noUiSlider */
+        .noUi-connect { background: #007bff; }
+        .noUi-tooltip { font-size: 12px; padding: 2px 4px; }
+        /* スライダーハンドルの色分け */
+        .noUi-handle.noUi-handle-lower {
+            background: #28a745; /* 開始ハンドル (緑) */
+            border: 1px solid #1f7a33;
+            cursor: grab;
+        }
+        .noUi-handle.noUi-handle-upper {
+            background: #dc3545; /* 終了ハンドル (赤) */
+            border: 1px solid #a71d2a;
+            cursor: grab;
+        }
+        .noUi-handle:focus { outline: none; }
+        /* 追加: ファイル/フォルダ選択UIのスタイル */
+        .file-input-container { display: flex; gap: 10px; align-items: center; }
+        .file-input-container input[type="text"] { flex-grow: 1; }
+        .file-input-container button { flex-shrink: 0; }
+        input:read-only { background-color: #e9ecef; cursor: default; }
+        /* 追加: 選択範囲の時間を表示するスタイル */
+        .duration-display {
+            text-align: center;
+            margin-top: 15px;
+            font-weight: bold;
+            color: #343a40;
+        }
+    </style>
+</head>
+<body>
+    <h1>MP4 to GIF Converter</h1>
+
+    <div id="preview-container" class="card">
+        <h3>プレビュー &amp; 範囲選択</h3>
+        <video id="video-preview" controls width="100%" muted></video>
+        <div id="duration-display" class="duration-display"></div>
+        <div id="slider-container"></div>
+    </div>
+
+    <div class="card">
+        <form id="upload-form">
+            <div class="form-group">
+                <label>1. MP4 ファイルを選択:</label>
+                <div class="file-input-container">
+                    <input type="text" id="selected-file-path" placeholder="ファイルが選択されていません" readonly>
+                    <button type="button" id="select-file-button">ファイルを選択...</button>
+                </div>
+                <!-- このinput要素は現在直接は使用されていませんが、将来のフォールバックのために残しておきます -->
+                <input type="file" id="file" name="file" accept=".mp4" style="display: none;">
+            </div>
+            <div class="form-group">
+                <label for="output-dir">2. 保存先フォルダ:</label>
+                <div class="file-input-container">
+                    <input type="text" id="output-dir" name="output_dir" placeholder="（デフォルト: outputsフォルダ）" readonly>
+                    <button type="button" id="select-dir-button">フォルダを選択...</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="output-filename">3. 保存ファイル名:</label>
+                <input type="text" id="output-filename" name="output_filename" placeholder="（指定なしの場合は 元のファイル名.gif）">
+            </div>
+            <hr style="margin: 20px 0;">
+            <div class="form-group">
+                <label for="start_time">開始時間 (秒):</label>
+                <input type="number" id="start_time" name="start_time" value="0" step="0.01" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="end_time">終了時間 (秒):</label>
+                <input type="number" id="end_time" name="end_time" placeholder="動画の最後まで" step="0.01" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="fps">フレームレート (FPS):</label>
+                <input type="number" id="fps" name="fps" value="15" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="width">幅 (px):</label>
+                <input type="number" id="width" name="width" value="640" class="form-control">
+            </div>
+            <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                <input type="checkbox" id="high_quality" name="high_quality" value="true" style="width: auto;">
+                <label for="high_quality" style="margin-bottom: 0;">高品質モード (色を綺麗に、ファイルサイズを最適化)</label>
+            </div>
+            <button type="submit">GIFに変換</button>
+        </form>
+    </div>
+    <p class="privacy-note">
+        🔒 アップロードされたファイルは、変換とダウンロードが完了した後にサーバーから自動的に削除されます。
+    </p>
+    <div id="status"></div>
+    <div id="progress-container" style="display: none; margin-top: 10px;">
+        <progress id="progress-bar" value="0" max="100" style="width: 100%;"></progress>
+    </div>
+    <div id="result"></div>
+
+    <!-- noUiSlider JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js" integrity="sha512-UOJe4paV6hYWBnS0c9GnIRH8PLm2nFK22uhfAvsTIqd3uwnWsVri1OPn5fJYdLtGY3wB11LGHJ4yPU1WFJeBYQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <script>
+    // ★★★ 解決策: pywebviewのAPIが準備完了したことを示す 'pywebviewready' イベントを待ちます。★★★
+    // これにより、`window.pywebview.api` が未定義であるというエラーを防ぎます。
+    window.addEventListener('pywebviewready', async function() {
+        const form = document.getElementById('upload-form');
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        
+        const fileInput = document.getElementById('file');
+        const startTimeInput = document.getElementById('start_time');
+        const endTimeInput = document.getElementById('end_time');
+        const previewContainer = document.getElementById('preview-container');
+        const videoPreview = document.getElementById('video-preview');
+        const sliderContainer = document.getElementById('slider-container');
+        let rangeSlider = null; // スライダーのインスタンスを保持
+        const durationDisplay = document.getElementById('duration-display'); // ★★★ 追加 ★★★
+
+        // --- ステップAで追加したUI要素 ---
+        const selectFileButton = document.getElementById('select-file-button');
+        const selectedFilePathInput = document.getElementById('selected-file-path');
+        const outputFilenameInput = document.getElementById('output-filename');
+        const outputDirInput = document.getElementById('output-dir');
+        const selectDirButton = document.getElementById('select-dir-button');
+
+        let currentVideoDuration = 0; // 動画の長さを保持
+        let isSliderSetup = false; // スライダーがセットアップ済みかどうかのフラグ
+
+        // --- ステップC: 最後に使用した保存先を読み込む ---
+        try {
+            const lastOutputDir = await window.pywebview.api.get_last_output_dir();
+            if (lastOutputDir) {
+                outputDirInput.value = lastOutputDir;
+            }
+        } catch (e) {
+            console.error("Could not load last used paths:", e);
+        }
+
+        /**
+         * ★★★ 追加: 選択された時間の長さを計算して表示を更新する関数 ★★★
+         */
+        function updateDurationDisplay() {
+            const startTime = parseFloat(startTimeInput.value);
+            
+            // endTimeInputが空または無効な場合は動画の全長を使用
+            const endTimeValue = endTimeInput.value.trim();
+            const endTime = (endTimeValue === '' || isNaN(parseFloat(endTimeValue))) 
+                            ? currentVideoDuration 
+                            : parseFloat(endTimeValue);
+
+            if (!isNaN(startTime) && !isNaN(endTime) && endTime >= startTime) {
+                const duration = endTime - startTime;
+                durationDisplay.textContent = `選択範囲: ${duration.toFixed(2)}秒`;
+            } else {
+                durationDisplay.textContent = '選択範囲: 0.00秒';
+            }
+        }
+        /**
+         * スライダーと関連イベントをセットアップする関数
+         */
+        function setupSliderAndEvents() {
+            const duration = videoPreview.duration;
+            if (!duration || !isFinite(duration)) {
+                // durationが不正な場合は何もしない
+                console.error("Invalid video duration:", duration);
+                return;
+            }
+            currentVideoDuration = duration;
+
+            // 既にスライダーが存在する場合は破棄
+            if (rangeSlider) {
+                rangeSlider.destroy();
+            }
+
+            // 入力欄を初期化
+            startTimeInput.value = "0.00";
+            endTimeInput.value = ""; // 最後までなので空にする
+            endTimeInput.placeholder = `動画の最後まで (${duration.toFixed(2)}s)`;
+
+            // スライダーを生成
+            rangeSlider = noUiSlider.create(sliderContainer, {
+                start: [0, duration],
+                connect: true,
+                range: { 'min': 0, 'max': duration },
+                tooltips: [
+                    { to: value => parseFloat(value).toFixed(2) + 's' },
+                    { to: value => parseFloat(value).toFixed(2) + 's' }
+                ]
+            });
+
+            // --- スライダーと入力欄の双方向連携 ---
+            rangeSlider.on('update', (values, handle) => {
+                const startTime = parseFloat(values[0]);
+                const endTime = parseFloat(values[1]);
+
+                startTimeInput.value = startTime.toFixed(2);
+                if (Math.abs(endTime - currentVideoDuration) < 0.1) {
+                    endTimeInput.value = '';
+                } else {
+                    endTimeInput.value = endTime.toFixed(2);
+                }
+                // ★★★ 追加: スライダー更新時に選択時間を表示 ★★★
+                updateDurationDisplay();
+            });
+
+            // --- スライダーと動画プレビューの連携 ---
+            rangeSlider.on('slide', (values, handle) => {
+                videoPreview.currentTime = parseFloat(values[handle]);
+            });
+
+            // --- 入力欄からスライダーへの連携 ---
+            startTimeInput.addEventListener('change', function() {
+                rangeSlider.set([this.value, null]);
+                // ★★★ 追加: 入力欄変更時に選択時間を表示 ★★★
+                updateDurationDisplay();
+            });
+
+            endTimeInput.addEventListener('change', function() {
+                rangeSlider.set([null, this.value === '' ? currentVideoDuration : this.value]);
+                // ★★★ 追加: 入力欄変更時に選択時間を表示 ★★★
+                updateDurationDisplay();
+            });
+
+            // ★★★ 追加: スライダーセットアップ時に初期表示 ★★★
+            updateDurationDisplay();
+        }
+
+        // ★★★ 修正計画案 ステップ2 ★★★
+        // 'loadedmetadata' イベントは、動画のメタデータ（長さ、サイズなど）が
+        // 読み込まれたときに発生します。これはスライダーを初期化するのに最も確実なタイミングです。
+        videoPreview.addEventListener('loadedmetadata', () => {
+            // isSliderSetup フラグは、新しいファイルが選択されるたびにリセットされます。
+            // これにより、動画ごとにスライダーが一度だけ作成されることを保証します。
+            if (!isSliderSetup) {
+                isSliderSetup = true;
+                setupSliderAndEvents();
+            }
+        });
+
+        // --- ステップB-1: UIイベントリスナーの変更 ---
+        // 「ファイルを選択...」ボタンがクリックされたら、PythonのAPIを呼び出す
+        selectFileButton.addEventListener('click', async () => {
+            // pywebviewのAPIを呼び出してファイル選択ダイアログを開く
+            const filePath = await window.pywebview.api.select_file();
+            if (filePath) {
+                selectedFilePathInput.value = filePath;
+
+                // ファイル名部分を取得
+                const fileName = filePath.split(/[\\/]/).pop();
+                // 保存ファイル名を自動生成
+                const lastDotIndex = fileName.lastIndexOf('.');
+                const baseName = (lastDotIndex === -1) ? fileName : fileName.substring(0, lastDotIndex);
+                outputFilenameInput.value = `${baseName}.gif`;
+
+                // プレビュー表示
+                isSliderSetup = false;
+                // 以前のプレビューが createObjectURL で作られたものであれば解放する
+                if (videoPreview.src && videoPreview.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(videoPreview.src);
+                }
+                // ローカルファイルパスを直接使わず、サーバーエンドポイント経由で読み込む
+                videoPreview.src = `/load-video?path=${encodeURIComponent(filePath)}`;
+                previewContainer.style.display = 'block';
+            }
+        });
+
+        // 「フォルダを選択...」ボタンがクリックされたら、PythonのAPIを呼び出す
+        selectDirButton.addEventListener('click', async () => {
+            const folderPath = await window.pywebview.api.select_folder();
+            if (folderPath) {
+                outputDirInput.value = folderPath;
+            }
+        });
+
+        // サーバーにタスクの状況を問い合わせる関数
+        function pollStatus(statusUrl) {
+            const intervalId = setInterval(async () => {
+                try {
+                    const response = await fetch(statusUrl); // ここは次のステップで変更します
+                    if (!response.ok) {
+                        statusDiv.className = 'error';
+                        statusDiv.textContent = `ステータスの確認に失敗しました: ${response.statusText}`;
+                        clearInterval(intervalId);
+                        return;
+                    }
+
+                    const data = await response.json();
+
+                    if (data.state === 'SUCCESS') { // ★★★ ステップ2: 変換完了後の処理を分岐 ★★★
+                        clearInterval(intervalId);
+                        progressContainer.style.display = 'none';
+                        statusDiv.className = 'success';
+                        resultDiv.innerHTML = ''; // 以前の結果をクリア
+
+                        if (data.is_desktop_app) {
+                            // --- デスクトップアプリ版のUI ---
+                            statusDiv.textContent = `変換完了！ファイルは正常に保存されました。`;
+                            const openFolderBtn = document.createElement('button');
+                            openFolderBtn.innerText = '保存先フォルダを開く';
+                            openFolderBtn.style.marginTop = '10px';
+                            openFolderBtn.onclick = async (e) => {
+                                e.preventDefault();
+                                try {
+                                    // バックエンドの /open-folder エンドポイントを呼び出す
+                                    await fetch('/open-folder', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ path: data.output_path })
+                                    });
+                                } catch (err) {
+                                    alert('フォルダを開けませんでした。');
+                                }
+                            };
+                            resultDiv.appendChild(openFolderBtn);
+                        } else {
+                            // --- Webアプリ版のUI (プレビューとダウンロードリンク) ---
+                            statusDiv.textContent = '変換が完了しました！';
+                            const gifResponse = await fetch(data.download_url);
+                            const blob = await gifResponse.blob();
+                            const objectURL = URL.createObjectURL(blob);
+                            resultDiv.innerHTML = `<img src="${objectURL}" alt="Converted GIF"><br><a href="${objectURL}" download="converted.gif">GIFをダウンロード</a>`;
+                        }
+
+                    } else if (data.state === 'FAILURE') {
+                        clearInterval(intervalId);
+                        progressContainer.style.display = 'none';
+                        statusDiv.className = 'error';
+                        statusDiv.textContent = `エラー: 変換に失敗しました。詳細: ${data.error || '不明なエラー'}`;
+                    } else if (data.state === 'PROGRESS') {
+                        statusDiv.textContent = `変換中です... ${data.progress}%`;
+                        progressBar.value = data.progress;
+                        progressContainer.style.display = 'block';
+                    } else {
+                        // PENDING, STARTED, RETRY...
+                        progressContainer.style.display = 'none';
+                        statusDiv.className = 'info';
+                        statusDiv.textContent = `変換中です... (ステータス: ${data.state})`;
+                    }
+                } catch (error) {
+                    statusDiv.className = 'error';
+                    statusDiv.textContent = `ステータスの確認中にエラーが発生しました: ${error}`;
+                    clearInterval(intervalId);
+                }
+            }, 2000); // 2秒ごとに状況を確認
+        }
+
+        form.addEventListener('submit', async (e) => { // ★★★ ステップB-2: 送信処理をJSONに変更 ★★★
+            e.preventDefault();
+
+            const payload = {
+                input_path: document.getElementById('selected-file-path').value,
+                output_dir: document.getElementById('output-dir').value,
+                output_filename: document.getElementById('output-filename').value,
+                start_time: document.getElementById('start_time').value,
+                end_time: document.getElementById('end_time').value,
+                fps: document.getElementById('fps').value,
+                width: document.getElementById('width').value,
+                high_quality: document.getElementById('high_quality').checked
+            };
+
+            if (!payload.input_path) {
+                alert('変換するMP4ファイルを選択してください。');
+                return;
+            }
+
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'info';
+            statusDiv.textContent = '変換リクエストを送信しています...';
+            progressContainer.style.display = 'none';
+            progressBar.value = 0;
+            resultDiv.innerHTML = '';
+
+            try {
+                const response = await fetch('/convert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (response.status === 202) {
+                    const data = await response.json();
+                    statusDiv.textContent = '変換タスクを受け付けました。処理を開始します...';
+                    pollStatus(data.status_url);
+                } else {
+                    const errorData = await response.json();
+                    statusDiv.className = 'error';
+                    statusDiv.textContent = `エラー: ${errorData.error || '不明なエラー'}`;
+                }
+            } catch (error) {
+                statusDiv.className = 'error';
+                statusDiv.textContent = `リクエストエラー: ${error}`;
+            }
+        });
+    });
+    </script>
+    <footer style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 14px; color: #6c757d;">
+        <p>Powered by Open Source Software. <a href="/licenses">Licenses</a></p>
+    </footer>
+</body>
+</html>

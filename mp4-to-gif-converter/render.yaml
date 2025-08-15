@@ -1,0 +1,34 @@
+services:
+  # 1. Webサーバー (Flask + Gunicorn)
+  - type: web
+    name: mp4-to-gif-webapp
+    env: docker
+    # 無料プランの場合、一定時間アクセスがないとスリープします
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: cache
+          property: connectionString
+
+  # 2. バックグラウンドワーカー (Celery)
+  - type: worker
+    name: celery-worker
+    env: docker
+    plan: free
+    # Dockerfileと同じ環境を使い、Celeryワーカーを起動するコマンドを指定
+    startCommand: "celery -A webapp.tasks.celery_app worker --loglevel=info"
+
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: cache
+          property: connectionString
+
+# 3. Redisデータベース
+- type: redis
+  name: cache
+  plan: free
