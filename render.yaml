@@ -1,64 +1,25 @@
 # render.yaml
-# This file configures the services for the mp4-to-gif-converter on Render.
+# This file configures a simple web service for the mp4-to-gif-converter on Render.
+# NOTE: This architecture does NOT use a background worker and may face timeout issues.
 
 services:
-  # 1. Redis instance for Celery Broker and Backend
-  # Render will automatically create this and provide the connection URL
-  # to the web and worker services.
-  - type: redis
-    name: redis-broker
-    plan: free # Or a paid plan for production
-    ipAllowList: [] # Allow access from all services in the account
-
-  # 2. Web Service (Flask/Gunicorn)
+  # A single Web Service (Flask/Gunicorn)
   # This service runs your Flask application.
   - type: web
     name: mp4-to-gif-web
     runtime: python
-    # Set the Python version to match your local environment
-    plan: free # Or a paid plan for production
+    plan: free
     # Command to install dependencies from your requirements file
     buildCommand: "pip install -r mp4-to-gif-converter/webapp/requirements.txt"
     # Command to run the Gunicorn server
-    # --chdir changes the directory to 'webapp' before running the app
-    # --timeout is increased to handle larger file uploads
-    # The path for --chdir is now relative to the repository root.
-    startCommand: "gunicorn --chdir mp4-to-gif-converter/webapp app:app --workers 4 --timeout 120"
+    # CRITICAL: Use 1 worker and multiple threads to share state in memory/filesystem.
+    startCommand: "gunicorn --chdir mp4-to-gif-converter/webapp app:app --workers 1 --threads 8 --timeout 120"
     envVars:
       # Set Python version via environment variable as a workaround
       - key: PYTHON_VERSION
         value: "3.10"
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: redis-broker
-          property: connectionString
       # FFMPEG_PATH and FFPROBE_PATH are available in Render's standard environment,
       # so we don't need to set them explicitly.
-      # Add the project folder to the Python path.
-      - key: PYTHONPATH
-        value: ./mp4-to-gif-converter
-
-  # 3. Worker Service (Celery)
-  # This service runs in the background to process video conversions.
-  - type: worker
-    name: mp4-to-gif-worker
-    runtime: python
-    # Specify the root directory for build and start commands
-    plan: free # Or a paid plan for production
-    buildCommand: "pip install -r mp4-to-gif-converter/webapp/requirements.txt"
-    # Command to start the Celery worker
-    # -A points to the Celery app instance
-    startCommand: "celery -A webapp.tasks.celery_app worker --loglevel=info"
-    envVars:
-      # Set Python version via environment variable as a workaround
-      - key: PYTHON_VERSION
-        value: "3.10"
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: redis-broker
-          property: connectionString
       # Add the project folder to the Python path.
       - key: PYTHONPATH
         value: ./mp4-to-gif-converter
