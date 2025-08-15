@@ -32,6 +32,7 @@ services:
         fromService:
           type: redis
           name: redis-broker
+          property: connectionString
       # FFMPEG_PATH and FFPROBE_PATH are available in Render's standard environment,
       # so we don't need to set them explicitly.
       # Add the project folder to the Python path.
@@ -57,6 +58,7 @@ services:
         fromService:
           type: redis
           name: redis-broker
+          property: connectionString
       # Add the project folder to the Python path.
       - key: PYTHONPATH
         value: ./mp4-to-gif-converter

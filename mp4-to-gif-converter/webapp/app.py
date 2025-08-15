@@ -126,15 +126,16 @@ def get_task_status(task_id):
 
 @app.route('/download/<filename>')
 def download_gif(filename):
-    """生成されたGIFファイルを送信する (クリーンアップはバックグラウンドタスクが担当)"""
-    path = os.path.join(app.config['OUTPUT_FOLDER'], filename)
-
-    if not os.path.exists(path):
+    """生成されたGIFファイルを安全に送信する。"""
+    # send_from_directoryは、ディレクトリトラバーサル攻撃からの保護など、
+    # セキュリティチェックを自動的に処理してくれるため、より安全です。
+    try:
+        return send_from_directory(
+            app.config['OUTPUT_FOLDER'],
+            filename
+        )
+    except FileNotFoundError:
         return jsonify({"error": "ファイルが見つからないか、既に削除されています。"}), 404
-
-    # ファイルの削除はバックグラウンドのクリーンアップタスクに任せるため、
-    # ここでは単純にファイルを送信するだけにする。
-    return send_file(path, mimetype='image/gif')
 
 if __name__ == '__main__':
     # 開発用サーバーの起動 (本番環境ではGunicornなどを使用)
