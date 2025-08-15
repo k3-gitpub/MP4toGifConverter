@@ -2,7 +2,7 @@
 # This file configures the services for the mp4-to-gif-converter on Render.
 
 services:
-  # 1. Redis instance for Celery Broker and Backend
+  # 1. Redis instance for Celery Broker and Backend 
   # Render will automatically create this and provide the connection URL
   # to the web and worker services.
   - type: redis
