@@ -16,7 +16,6 @@ services:
     name: mp4-to-gif-web
     runtime: python
     # Set the Python version to match your local environment
-    pythonVersion: "3.10"
     plan: free # Or a paid plan for production
     # Command to install dependencies from your requirements file
     buildCommand: "pip install -r mp4-to-gif-converter/webapp/requirements.txt"
@@ -26,6 +25,9 @@ services:
     # The path for --chdir is now relative to the repository root.
     startCommand: "gunicorn --chdir mp4-to-gif-converter/webapp app:app --workers 4 --timeout 120"
     envVars:
+      # Set Python version via environment variable as a workaround
+      - key: PYTHON_VERSION
+        value: "3.10"
       - key: REDIS_URL
         fromService:
           type: redis
@@ -42,13 +44,15 @@ services:
     name: mp4-to-gif-worker
     runtime: python
     # Specify the root directory for build and start commands
-    pythonVersion: "3.10"
     plan: free # Or a paid plan for production
     buildCommand: "pip install -r mp4-to-gif-converter/webapp/requirements.txt"
     # Command to start the Celery worker
     # -A points to the Celery app instance
     startCommand: "celery -A webapp.tasks.celery_app worker --loglevel=info"
     envVars:
+      # Set Python version via environment variable as a workaround
+      - key: PYTHON_VERSION
+        value: "3.10"
       - key: REDIS_URL
         fromService:
           type: redis

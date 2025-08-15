@@ -117,7 +117,7 @@ def get_task_status(task_id):
         result_data = task_result.result
         filename = os.path.basename(result_data['output_path'])
         response_data['download_url'] = url_for('download_gif', filename=filename)
-    if task_result.state == 'FAILURE':
+    elif task_result.state == 'FAILURE':
         # タスクが失敗した場合、エラーメッセージを含める。
         # Celeryタスク内で例外がraiseされると、task_result.infoに例外オブジェクトが格納されるため、str()で変換するのが最も安全。
         response_data['error'] = str(task_result.info)
