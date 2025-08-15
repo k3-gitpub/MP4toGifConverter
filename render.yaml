@@ -18,7 +18,7 @@ services:
     # Set the Python version to match your local environment
     # Specify the root directory for build and start commands
     rootDir: ./mp4-to-gif-converter
-    pythonVersion: "3.10"
+    pythonVersion: "3.11"
     plan: free # Or a paid plan for production
     # Command to install dependencies from your requirements file
     buildCommand: "pip install -r webapp/requirements.txt"
@@ -43,7 +43,7 @@ services:
     env: python
     # Specify the root directory for build and start commands
     rootDir: ./mp4-to-gif-converter
-    pythonVersion: "3.10"
+    pythonVersion: "3.11"
     plan: free # Or a paid plan for production
     buildCommand: "pip install -r webapp/requirements.txt"
     # Command to start the Celery worker
