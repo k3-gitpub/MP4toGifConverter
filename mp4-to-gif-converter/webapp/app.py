@@ -138,4 +138,7 @@ def download_gif(filename):
 
 if __name__ == '__main__':
     # 開発用サーバーの起動 (本番環境ではGunicornなどを使用)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # 環境変数からホストとポートを取得し、なければデフォルト値を使用する
+    host = os.environ.get('FLASK_RUN_HOST', '127.0.0.1')
+    port = int(os.environ.get('FLASK_RUN_PORT', 5000))
+    app.run(debug=True, host=host, port=port)

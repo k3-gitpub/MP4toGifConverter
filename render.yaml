@@ -16,16 +16,15 @@ services:
     name: mp4-to-gif-web
     runtime: python
     # Set the Python version to match your local environment
-    # Specify the root directory for build and start commands
-    rootDir: ./mp4-to-gif-converter
     pythonVersion: "3.10"
     plan: free # Or a paid plan for production
     # Command to install dependencies from your requirements file
-    buildCommand: "pip install -r webapp/requirements.txt"
+    buildCommand: "pip install -r mp4-to-gif-converter/webapp/requirements.txt"
     # Command to run the Gunicorn server
     # --chdir changes the directory to 'webapp' before running the app
     # --timeout is increased to handle larger file uploads
-    startCommand: "gunicorn --chdir webapp app:app --workers 4 --timeout 120"
+    # The path for --chdir is now relative to the repository root.
+    startCommand: "gunicorn --chdir mp4-to-gif-converter/webapp app:app --workers 4 --timeout 120"
     envVars:
       - key: REDIS_URL
         fromService:
@@ -33,8 +32,9 @@ services:
           name: redis-broker
       # FFMPEG_PATH and FFPROBE_PATH are available in Render's standard environment,
       # so we don't need to set them explicitly.
+      # Add the project folder to the Python path.
       - key: PYTHONPATH
-        value: . # With `rootDir`, this adds `mp4-to-gif-converter` to the path.
+        value: ./mp4-to-gif-converter
 
   # 3. Worker Service (Celery)
   # This service runs in the background to process video conversions.
@@ -42,10 +42,9 @@ services:
     name: mp4-to-gif-worker
     runtime: python
     # Specify the root directory for build and start commands
-    rootDir: ./mp4-to-gif-converter
     pythonVersion: "3.10"
     plan: free # Or a paid plan for production
-    buildCommand: "pip install -r webapp/requirements.txt"
+    buildCommand: "pip install -r mp4-to-gif-converter/webapp/requirements.txt"
     # Command to start the Celery worker
     # -A points to the Celery app instance
     startCommand: "celery -A webapp.tasks.celery_app worker --loglevel=info"
@@ -54,5 +53,6 @@ services:
         fromService:
           type: redis
           name: redis-broker
+      # Add the project folder to the Python path.
       - key: PYTHONPATH
-        value: . # With `rootDir`, this adds `mp4-to-gif-converter` to the path.
+        value: ./mp4-to-gif-converter
