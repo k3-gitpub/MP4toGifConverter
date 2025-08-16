@@ -2,9 +2,6 @@
 .git
 .gitignore
 
-# Docker
-Dockerfile
-
 # Python virtual environment
 venv
 __pycache__

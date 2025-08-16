@@ -28,4 +28,4 @@ COPY core_converter/ ./core_converter/
 # --- 4. アプリケーションの起動 ---
 # Gunicornの作業ディレクトリをwebappに設定し、app:appを起動します。
 # Renderが提供するPORT環境変数をリッスンします。
-CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "--chdir", "webapp", "app:app"]
+CMD gunicorn --bind "0.0.0.0:$PORT" --chdir webapp app:app
