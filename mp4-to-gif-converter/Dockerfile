@@ -8,6 +8,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
+# --- 環境変数の設定 ---
+# /app をPythonの検索パスに追加し、core_converterモジュールを確実に見つけられるようにします。
+ENV PYTHONPATH=/app
+
 # --- 3. アプリケーションのセットアップ ---
 # コンテナ内の作業ディレクトリを設定します。
 WORKDIR /app
