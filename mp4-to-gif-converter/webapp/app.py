@@ -43,9 +43,13 @@ if shutil.which(FFPROBE_PATH) is None:
     print("=" * 60)
     sys.exit(1)  # 必須コンポーネントがないため、アプリケーションを終了します。
 
-# ファイルを一時的に保存するディレクトリ
+# --- ファイル保存ディレクトリ設定 ---
+# 無料プランでは永続ディスクが利用できないため、コンテナ内の一時的な
+# ファイルシステムにディレクトリを作成します。これらのファイルはインスタンスが
+# スリープ（非アクティブ状態）になると消去されます。
 UPLOAD_FOLDER = os.path.join(PROJECT_ROOT, 'uploads')
 OUTPUT_FOLDER = os.path.join(PROJECT_ROOT, 'outputs')
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
