@@ -1,18 +1,6 @@
 import sys
 import os
 
-# --- Robust Path Setup ---
-# This ensures that the script can find modules in the project's root directory.
-# It handles cases where the script is run directly or in an interactive environment.
-try:
-    # If run as a script, __file__ is defined. The parent of this file's directory is the project root.
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-except NameError:
-    # __file__ is not defined (e.g., in a REPL). Assume CWD is the project root and path is already set.
-    pass
-
 import webview
 import json
 from pathlib import Path
