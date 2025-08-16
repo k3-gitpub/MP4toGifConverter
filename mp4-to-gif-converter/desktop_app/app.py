@@ -3,12 +3,12 @@ import uuid
 import shutil
 import sys
 import subprocess
+import logging
 import threading
 from flask import Flask, request, jsonify, url_for, Response, render_template, stream_with_context, send_file
 from dataclasses import dataclass
-from werkzeug.utils import secure_filename
-# 共通のコアライブラリをインポート
-from core_converter import conversion
+from pathlib import Path
+from datetime import datetime
 
 def get_resource_path(relative_path):
     """
@@ -35,6 +35,10 @@ def get_resource_path(relative_path):
 template_folder = get_resource_path('templates')
 static_folder = get_resource_path('static')
 app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+# Flaskのデフォルトロガーを無効にし、独自設定のロガーに統一する
+app.logger.disabled = True
+log = logging.getLogger('werkzeug')
+log.disabled = True
 app.config['IS_DESKTOP_APP'] = False # デフォルトはWebアプリモード
 
 # --- 設定 ---
@@ -51,8 +55,23 @@ else:
 # 実行ファイルの存在チェック
 if (not os.path.exists(FFMPEG_PATH) and shutil.which(FFMPEG_PATH) is None) or \
    (not os.path.exists(FFPROBE_PATH) and shutil.which(FFPROBE_PATH) is None):
-    print("CRITICAL ERROR: FFmpeg or FFprobe not found.", file=sys.stderr)
+    error_msg = f"CRITICAL ERROR: FFmpeg or FFprobe not found. Path: FFMPEG='{FFMPEG_PATH}', FFPROBE='{FFPROBE_PATH}'"
+    # ユーザーに見えるようにコンソールには必ず出力
+    print(error_msg, file=sys.stderr)
+    # ベストエフォートでログファイルにも書き込む
+    # この時点ではmain.pyのロガー設定が完了していないため、手動で書き込む
+    try:
+        APP_NAME = "MP4toGIFConverter"
+        APP_DATA_DIR = Path.home() / f".{APP_NAME.lower()}"
+        APP_DATA_DIR.mkdir(exist_ok=True)
+        LOG_FILE = APP_DATA_DIR / 'critical_errors.log'
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"[{datetime.now().isoformat()}] {error_msg}\n")
+    except Exception:
+        # ログ書き込みに失敗してもプログラムの終了は妨げない
+        pass
     sys.exit(1)
+
 
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
@@ -64,6 +83,44 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 # タスクの状態を保存するためのインメモリ辞書 (ローカル版の簡易DB)
 tasks_db = {}
+
+# このモジュール用のロガーインスタンスを取得
+logger = logging.getLogger(__name__)
+
+def sanitize_filename(filename: str) -> str:
+    """
+    ファイル名からパス区切り文字などの危険な文字を削除する。
+    werkzeugのsecure_filenameと違い、非ASCII文字は保持する。
+    """
+    # パス区切り文字を削除
+    sanitized = filename.replace('/', '').replace('\\', '')
+    # Windowsでファイル名として使えない文字をいくつか削除
+    for char in '<>:"|?*':
+        sanitized = sanitized.replace(char, '')
+    # 先頭や末尾の空白、ドットを削除
+    sanitized = sanitized.strip(' .')
+    # ファイル名が空になった場合のフォールバック
+    if not sanitized:
+        return f"converted_{uuid.uuid4().hex[:8]}"
+    return sanitized
+
+def get_video_duration(ffprobe_path: str, video_path: str) -> float | None:
+    """ffprobeを使って動画の長さを秒単位で取得する。"""
+    command = [
+        ffprobe_path, '-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1', video_path
+    ]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=True, encoding='utf-8',
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+        )
+        return float(result.stdout.strip())
+    except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as e:
+        logger.error(f"Failed to get video duration for '{video_path}'. Error: {e}", exc_info=True)
+        if isinstance(e, subprocess.CalledProcessError):
+            logger.error(f"ffprobe stderr: {e.stderr}")
+        return None
 
 @dataclass
 class ConversionJob:
@@ -88,36 +145,76 @@ def conversion_worker_thread(task_id: str, job: ConversionJob):
     def progress_callback(progress, step):
         if task_id in tasks_db:
             tasks_db[task_id].update({'progress': progress, 'step': step})
+    
+    # --- FFmpegコマンドの組み立て ---
+    # 外部ライブラリに依存せず、直接コマンドを生成することでエラーハンドリングを堅牢にします。
+    command = [
+        job.ffmpeg_path,
+        '-y',  # 出力ファイルを常に上書き
+        '-ss', str(job.start_time), # 開始時間
+        '-i', job.input_path,      # 入力ファイル
+    ]
+    if job.end_time is not None:
+        command.extend(['-to', str(job.end_time)]) # 終了時間
+
+    # ビデオフィルターの設定
+    filters = [
+        f"fps={job.fps}",
+        f"scale={job.width}:-1:flags=lanczos",
+    ]
+    if job.high_quality:
+        # 高品質モード用のフィルター（2パス処理）
+        filters.append("split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
+    
+    command.extend(['-vf', ','.join(filters)])
+    command.append(job.output_path) # 出力ファイル
 
     try:
-        # 共通ライブラリの変換関数を呼び出す
-        conversion.run_conversion(
-            job.ffmpeg_path,
-            job.input_path,
-            job.output_path,
-            job.start_time,
-            job.end_time,
-            job.fps,
-            job.width,
-            job.conversion_duration,
-            job.high_quality,
-            progress_callback=progress_callback
+        # FFmpegプロセスを直接実行し、エラーがあれば例外を発生させる (check=True)
+        # これにより、FFmpegからのエラーメッセージを確実に捕捉できます。
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True, # stdoutとstderrをキャプチャして例外オブジェクトに含める
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0 # Windowsでコンソール非表示
         )
         # 成功したら状態を更新
         tasks_db[task_id]['state'] = 'SUCCESS'
         tasks_db[task_id]['output_path'] = job.output_path
-    except Exception as e:
-        # 失敗したらエラーメッセージを保存
+        logger.info(f"Task {task_id} completed successfully. Output: {job.output_path}")
+    except subprocess.CalledProcessError as e:
+        # FFmpegが0以外の終了コードを返して失敗した場合の特別な処理
+        error_message_for_ui = "変換エラー (FFmpeg)。詳細はログファイルを確認してください。"
+
+        # FFmpegの標準エラー出力をデコードしてログに記録する
+        ffmpeg_error_output = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "N/A"
+
+        logger.error(
+            f"Conversion failed for task {task_id} due to FFmpeg error (exit code {e.returncode}).\n"
+            f"FFmpeg Command: {' '.join(map(str, e.cmd))}\n"
+            f"FFmpeg stderr:\n{ffmpeg_error_output}"
+        )
         tasks_db[task_id]['state'] = 'FAILURE'
-        tasks_db[task_id]['error'] = str(e)
+        tasks_db[task_id]['error'] = error_message_for_ui
+    except Exception as e:
+        # FFmpeg以外の予期せぬエラーが発生した場合
+        # UIにはエラーの種別がわかる程度のメッセージを表示
+        error_message_for_ui = f"変換エラー ({type(e).__name__})。詳細はログファイルを確認してください。"
+
+        # ログにはスタックトレースを含めた詳細な情報を記録
+        logger.error(
+            f"Conversion failed for task {task_id}. Input: {job.input_path}",
+            exc_info=True  # この引数がスタックトレースをログに追加する
+        )
+        tasks_db[task_id]['state'] = 'FAILURE'
+        tasks_db[task_id]['error'] = error_message_for_ui
     finally:
         # 変換が成功しても失敗しても、入力ファイルを削除する
         try:
             if os.path.exists(input_path):
                 os.remove(input_path)
         except OSError as e:
-            # ログ出力が望ましいが、ここでは標準エラーに出力
-            print(f"Error cleaning up input file {input_path}: {e}", file=sys.stderr)
+            logger.warning(f"Could not clean up input file {input_path}: {e}")
 
 @app.route('/')
 def index():
@@ -151,8 +248,8 @@ def load_video():
     try:
         return send_file(video_path, mimetype='video/mp4')
     except Exception as e:
-        app.logger.error(f"Error sending file {video_path}: {e}")
-        return jsonify({"error": "Could not send file"}), 500
+        logger.error(f"Error sending file {video_path}: {e}", exc_info=True)
+        return jsonify({"error": "Could not send file. See logs for details."}), 500
 
 @app.route('/open-folder', methods=['POST'])
 def open_folder_route():
@@ -173,7 +270,8 @@ def open_folder_route():
             subprocess.run(['xdg-open', folder_path])
         return jsonify({"status": "success"}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Failed to open folder '{folder_path}': {e}", exc_info=True)
+        return jsonify({"error": "Could not open folder. See logs for details."}), 500
 
 @app.route('/convert', methods=['POST'])
 def start_conversion_task():
@@ -212,16 +310,16 @@ def start_conversion_task():
 
     # 保存ファイル名を決定
     if output_filename_from_form and output_filename_from_form.strip():
-        final_filename = secure_filename(output_filename_from_form)
+        final_filename = sanitize_filename(output_filename_from_form)
     elif original_filename:
         base, _ = os.path.splitext(original_filename)
-        final_filename = secure_filename(f"{base}.gif")
+        final_filename = sanitize_filename(f"{base}.gif")
     else:
         final_filename = f"{task_id}.gif"
     output_path = os.path.join(save_dir, final_filename)
 
     # 進捗計算のために動画の長さを取得
-    video_duration = conversion.get_video_duration(FFPROBE_PATH, input_path)
+    video_duration = get_video_duration(FFPROBE_PATH, input_path)
     if video_duration is None:
         os.remove(input_path)
         return jsonify({"error": "Could not get video information."}), 500
@@ -291,7 +389,7 @@ def download_gif(filename):
                     if os.path.exists(path):
                         os.remove(path)
                 except OSError as e:
-                    app.logger.error(f"Failed to delete temporary file: {e}")
+                    logger.error(f"Failed to delete temporary file: {e}", exc_info=True)
 
     # ストリーミングでレスポンスを返し、ダウンロードダイアログをトリガーする
     return Response(stream_with_context(generate()), mimetype='image/gif', headers={

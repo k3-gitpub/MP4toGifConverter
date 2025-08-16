@@ -425,10 +425,28 @@
                 statusDiv.textContent = `リクエストエラー: ${error}`;
             }
         });
+
+        // 「ログフォルダを開く」リンクの処理
+        const openLogFolderLink = document.getElementById('open-log-folder-link');
+        if (openLogFolderLink) {
+            openLogFolderLink.addEventListener('click', async (e) => {
+                e.preventDefault(); // リンクのデフォルト動作（ページ遷移）を防ぐ
+                try {
+                    await window.pywebview.api.open_log_folder();
+                } catch (err) {
+                    console.error('Failed to open log folder:', err);
+                    alert('ログフォルダを開けませんでした。');
+                }
+            });
+        }
     });
     </script>
     <footer style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 14px; color: #6c757d;">
-        <p>Powered by Open Source Software. <a href="/licenses">Licenses</a></p>
+        <p>
+            Powered by Open Source Software. <a href="/licenses">Licenses</a>
+            <span style="margin: 0 10px;">|</span>
+            <a href="#" id="open-log-folder-link" title="問題が発生した場合の調査に役立つログファイルが保存されているフォルダを開きます。">ログフォルダを開く</a>
+        </p>
     </footer>
 </body>
 </html>
