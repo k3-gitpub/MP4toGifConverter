@@ -1,23 +1,27 @@
-# ベースとなるOSとしてPython 3.10のスリム版を選択
+# --- 1. ベースイメージの選択 ---
+# Python 3.10のスリムバージョンをベースにします。
 FROM python:3.10-slim
 
-# 環境変数: Pythonの出力をバッファリングせず、即座にログに出力させる
-ENV PYTHONPATH=/app
+# --- 2. システム依存関係のインストール ---
+# FFmpegをインストールし、キャッシュを削除してイメージサイズを小さく保ちます。
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
 
-# OSをアップデートし、GIF変換に必須のffmpegをインストール
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-
-# アプリケーションを配置するディレクトリを作成
+# --- 3. アプリケーションのセットアップ ---
+# コンテナ内の作業ディレクトリを設定します。
 WORKDIR /app
 
-# まずrequirements.txtだけをコピーし、ライブラリをインストールします。
-# これにより、アプリのコードだけを変更した場合に、この重い処理がキャッシュされるようになります。
-COPY webapp/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# まずrequirements.txtだけをコピーしてライブラリをインストールします。
+# これにより、コードを変更してもライブラリの再インストールが走らず、ビルドが高速になります。
+COPY webapp/requirements.txt ./webapp/requirements.txt
+RUN pip install --no-cache-dir -r ./webapp/requirements.txt
 
-# アプリケーションの全ファイルをコピーします。
-COPY webapp/ /app/webapp/
-COPY core_converter/ /app/core_converter/
+# アプリケーションのコード全体をコピーします。
+COPY webapp/ ./webapp/
+COPY core_converter/ ./core_converter/
 
-# コンテナ起動時にGunicornサーバーを実行 (Renderがポートを自動設定)
-CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "app:app"]
+# --- 4. アプリケーションの起動 ---
+# Gunicornの作業ディレクトリをwebappに設定し、app:appを起動します。
+# Renderが提供するPORT環境変数をリッスンします。
+CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "--chdir", "webapp", "app:app"]
