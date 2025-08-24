@@ -9,6 +9,39 @@ import subprocess
 import logging.handlers
 from app import app, tasks_db
 
+# --- FFmpeg/FFprobe パス解決 ---
+def get_ffmpeg_path():
+    """
+    FFmpeg/FFprobeのバイナリへの絶対パスを取得します。
+    開発環境 (.py) とパッケージ化された環境 (PyInstaller) の両方で動作します。
+    """
+    # PyInstallerによってバンドルされた場合、ベースパスが異なります。
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # PyInstallerのバンドル(frozen)内で実行中。
+        # sys._MEIPASSはPyInstallerが作成した一時フォルダへのパスです。
+        base_path = Path(sys._MEIPASS)
+    else:
+        # 通常の.pyスクリプトとして実行中。
+        # このファイルの親ディレクトリの親を基準にします。
+        # 想定するディレクトリ構造:
+        # /project_root/
+        #  |- /bin/
+        #  |   |- ffmpeg.exe
+        #  |- /desktop_app/
+        #  |   |- main.py
+        base_path = Path(__file__).resolve().parent.parent
+
+    # 'bin'サブディレクトリ内のバイナリへのパスを構築します。
+    ffmpeg_path = base_path / 'bin' / 'ffmpeg.exe'
+    ffprobe_path = base_path / 'bin' / 'ffprobe.exe'
+
+    if not ffmpeg_path.exists() or not ffprobe_path.exists():
+        # 実行可能ファイルが見つからない場合は、致命的なエラーとして例外を発生させます。
+        error_msg = f"FFmpeg or FFprobe not found. Searched in: {base_path / 'bin'}"
+        raise FileNotFoundError(error_msg)
+
+    return str(ffmpeg_path), str(ffprobe_path)
+
 # --- アプリケーションデータディレクトリの設定 ---
 # ユーザーの環境を汚さないよう、設定ファイルは専用のフォルダに保存します。
 # クロスプラットフォームで動作するよう、ユーザーのホームディレクトリ以下に作成します。
@@ -66,7 +99,7 @@ def load_config():
 def save_config(config):
     """設定ファイルを保存する"""
     try:
-        with open(APP_DATA_DIR / 'pywebview_config.json', 'w', encoding='utf-8') as f:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2)
     except Exception as e:
         logging.error(f"Error saving config: {e}", exc_info=True)
@@ -189,6 +222,24 @@ def main():
 
     # アプリケーションのロギングを設定
     setup_logging(is_debug)
+
+    # --- FFmpegのパスを設定 ---
+    try:
+        ffmpeg_path, ffprobe_path = get_ffmpeg_path()
+        app.config['FFMPEG_PATH'] = ffmpeg_path
+        app.config['FFPROBE_PATH'] = ffprobe_path
+        logging.info(f"FFmpeg found at: {ffmpeg_path}")
+    except FileNotFoundError as e:
+        logging.critical(e)
+        # FFmpegが見つからない場合、GUIでエラーを表示して終了
+        webview.create_window(
+            '致命的なエラー',
+            html=f'<h1>FFmpegが見つかりません</h1><p>アプリケーションの動作に必要なFFmpegが見つかりませんでした。</p><p>エラー詳細: {e}</p><p>アプリケーションを終了します。</p>',
+            width=600,
+            height=250
+        )
+        webview.start()
+        sys.exit(1) # 終了
 
     # デスクトップアプリとして実行されていることをFlaskアプリに伝える
     app.config['IS_DESKTOP_APP'] = True
