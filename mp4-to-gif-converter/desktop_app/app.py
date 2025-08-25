@@ -19,8 +19,19 @@ log = logging.getLogger('werkzeug')
 log.disabled = True 
 app.config['IS_DESKTOP_APP'] = False # デフォルトはWebアプリモード
 
-UPLOAD_FOLDER = 'uploads'
-OUTPUT_FOLDER = 'outputs'
+# --- アプリケーションデータフォルダの設定 ---
+# Program Filesなどの書き込み禁止領域にインストールされた場合でも
+# アプリが正常に動作できるよう、ユーザーのAppDataフォルダにデータ（一時ファイルなど）を保存します。
+APP_NAME = "MP4-to-GIF-Converter"
+# C:\Users\<ユーザー名>\AppData\Local
+base_data_dir = os.getenv('LOCALAPPDATA')
+if not base_data_dir:
+    # LOCALAPPDATAが取得できない場合のフォールバック
+    base_data_dir = os.path.expanduser('~')
+app_data_dir = os.path.join(base_data_dir, APP_NAME)
+
+UPLOAD_FOLDER = os.path.join(app_data_dir, 'uploads')
+OUTPUT_FOLDER = os.path.join(app_data_dir, 'outputs')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
