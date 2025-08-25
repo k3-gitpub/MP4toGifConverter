@@ -15,29 +15,19 @@ def get_ffmpeg_path():
     FFmpeg/FFprobeのバイナリへの絶対パスを取得します。
     開発環境 (.py) とパッケージ化された環境 (PyInstaller) の両方で動作します。
     """
-    # PyInstallerによってバンドルされた場合、ベースパスが異なります。
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        # PyInstallerのバンドル(frozen)内で実行中。
-        # sys._MEIPASSはPyInstallerが作成した一時フォルダへのパスです。
+        # PyInstaller実行時: sys._MEIPASS/bin/ffmpeg.exe
         base_path = Path(sys._MEIPASS)
+        ffmpeg_path = base_path / 'bin' / 'ffmpeg.exe'
+        ffprobe_path = base_path / 'bin' / 'ffprobe.exe'
     else:
-        # 通常の.pyスクリプトとして実行中。
-        # このファイルの親ディレクトリの親を基準にします。
-        # 想定するディレクトリ構造:
-        # /project_root/
-        #  |- /bin/
-        #  |   |- ffmpeg.exe
-        #  |- /desktop_app/
-        #  |   |- main.py
+        # 開発時: プロジェクトルート/bin/ffmpeg.exe
         base_path = Path(__file__).resolve().parent.parent
-
-    # 'bin'サブディレクトリ内のバイナリへのパスを構築します。
-    ffmpeg_path = base_path / 'bin' / 'ffmpeg.exe'
-    ffprobe_path = base_path / 'bin' / 'ffprobe.exe'
+        ffmpeg_path = base_path / 'bin' / 'ffmpeg.exe'
+        ffprobe_path = base_path / 'bin' / 'ffprobe.exe'
 
     if not ffmpeg_path.exists() or not ffprobe_path.exists():
-        # 実行可能ファイルが見つからない場合は、致命的なエラーとして例外を発生させます。
-        error_msg = f"FFmpeg or FFprobe not found. Searched in: {base_path / 'bin'}"
+        error_msg = f"FFmpeg or FFprobe not found. Searched in: {ffmpeg_path.parent}"
         raise FileNotFoundError(error_msg)
 
     return str(ffmpeg_path), str(ffprobe_path)

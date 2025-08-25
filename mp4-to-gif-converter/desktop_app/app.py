@@ -13,10 +13,10 @@ from datetime import datetime
 # Flaskアプリのインスタンス化。
 # パスに関する設定は、エントリーポイントであるmain.pyに責任を移譲します。
 app = Flask(__name__)
-# Flaskのデフォルトロガーを無効にし、独自設定のロガーに統一する
-app.logger.disabled = True
-log = logging.getLogger('werkzeug')
-log.disabled = True
+# FlaskとWerkzeugのデフォルトロガーを無効にし、main.pyで設定されたロガーに統一する
+app.logger.disabled = True 
+log = logging.getLogger('werkzeug') 
+log.disabled = True 
 app.config['IS_DESKTOP_APP'] = False # デフォルトはWebアプリモード
 
 UPLOAD_FOLDER = 'uploads'
@@ -53,8 +53,12 @@ def sanitize_filename(filename: str) -> str:
         return f"converted_{uuid.uuid4().hex[:8]}"
     return sanitized
 
-def get_video_duration(ffprobe_path: str, video_path: str) -> float | None:
+def get_video_duration(ffprobe_path: str = None, video_path: str = None) -> float | None:
     """ffprobeを使って動画の長さを秒単位で取得する。"""
+    # ffprobe_pathが未指定ならFlaskアプリのconfigから取得
+    if ffprobe_path is None:
+        from flask import current_app
+        ffprobe_path = current_app.config.get('FFPROBE_PATH')
     command = [
         ffprobe_path, '-v', 'error', '-show_entries', 'format=duration',
         '-of', 'default=noprint_wrappers=1:nokey=1', video_path
@@ -88,14 +92,6 @@ def conversion_worker_thread(task_id: str, job: ConversionJob):
     """
     変換処理をバックグラウンドのスレッドで実行し、辞書の状態を更新する。
     """
-    input_path = job.input_path
-    
-    # 進捗を辞書に書き込むためのコールバック関数を定義
-    def progress_callback(progress, step):
-        # このコールバックは別スレッドから呼ばれる可能性があるため、スレッドセーフな操作が必要です
-        with tasks_db_lock:
-            if task_id in tasks_db:
-                tasks_db[task_id].update({'progress': progress, 'step': step})
     # --- FFmpegコマンドの組み立て ---
     # 外部ライブラリに依存せず、直接コマンドを生成することでエラーハンドリングを堅牢にします。
     command = [
@@ -164,10 +160,10 @@ def conversion_worker_thread(task_id: str, job: ConversionJob):
     finally:
         # 変換が成功しても失敗しても、入力ファイルを削除する
         try:
-            if os.path.exists(input_path):
-                os.remove(input_path)
+            if os.path.exists(job.input_path):
+                os.remove(job.input_path)
         except OSError as e:
-            logger.warning(f"Could not clean up input file {input_path}: {e}")
+            logger.warning(f"Could not clean up input file {job.input_path}: {e}")
 
 @app.route('/')
 def index():
@@ -254,8 +250,14 @@ def start_conversion_task():
     
     # 元のファイルを直接使わず、安全な場所にコピーして処理する (pathlibを使用)
     upload_dir = Path(app.config['UPLOAD_FOLDER'])
-    input_path_p = upload_dir / f"{task_id}{original_input_p.suffix}"
-    shutil.copy(original_input_p, input_path_p)
+    try:
+        input_path_p = upload_dir / f"{task_id}{original_input_p.suffix}"
+        shutil.copy(original_input_p, input_path_p)
+    except (IOError, OSError) as e:
+        # ファイルコピーの失敗は致命的なので、ここでエラーを返す
+        logger.error(f"Failed to copy input file from '{original_input_path}' to '{input_path_p}': {e}", exc_info=True)
+        return jsonify({"error": f"Could not process input file: {e}"}), 500
+
     input_path = str(input_path_p) # ワーカースレッドに渡すため文字列に変換
 
     # 保存先フォルダを決定 (pathlibを使用)

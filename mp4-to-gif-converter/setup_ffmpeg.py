@@ -24,33 +24,34 @@ def main():
         print("FFmpeg already found. Setup is complete.")
         return
 
-    # --- Download ---
-    print(f"Downloading FFmpeg from {FFMPEG_URL}...")
     try:
+        # --- Download ---
+        print(f"Downloading FFmpeg from {FFMPEG_URL}...")
         with urllib.request.urlopen(FFMPEG_URL) as response, open(DOWNLOAD_ZIP_PATH, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
-    except Exception as e:
-        print(f"Error: Failed to download FFmpeg. {e}", file=sys.stderr)
-        sys.exit(1)
 
-    # --- Extract ---
-    print("Extracting FFmpeg binaries...")
-    os.makedirs(TARGET_DIR, exist_ok=True)
-    try:
+        # --- Extract ---
+        print("Extracting FFmpeg binaries...")
+        os.makedirs(TARGET_DIR, exist_ok=True)
         with zipfile.ZipFile(DOWNLOAD_ZIP_PATH) as z:
             # Extract only ffmpeg.exe and ffprobe.exe from the archive's 'bin' folder
             for filename in ["ffmpeg.exe", "ffprobe.exe"]:
                 # The files are inside a directory like 'ffmpeg-7.0-essentials_build/bin/'
                 # We find the full path inside the zip and extract it.
                 source_path = next((f.filename for f in z.infolist() if f.filename.endswith(f"bin/{filename}")), None)
-                if source_path:
-                    with z.open(source_path) as source, open(os.path.join(TARGET_DIR, filename), "wb") as target:
-                        shutil.copyfileobj(source, target)
+                if not source_path:
+                    raise FileNotFoundError(f"Could not find '{filename}' in the downloaded archive.")
+
+                with z.open(source_path) as source, open(os.path.join(TARGET_DIR, filename), "wb") as target:
+                    shutil.copyfileobj(source, target)
         print(f"Successfully placed ffmpeg.exe and ffprobe.exe in '{TARGET_DIR}'.")
+    except Exception as e:
+        print(f"Error during FFmpeg setup: {e}", file=sys.stderr)
+        sys.exit(1)
     finally:
         # --- Cleanup ---
-        os.remove(DOWNLOAD_ZIP_PATH)
+        if os.path.exists(DOWNLOAD_ZIP_PATH):
+            os.remove(DOWNLOAD_ZIP_PATH)
 
 if __name__ == "__main__":
     main()
-
